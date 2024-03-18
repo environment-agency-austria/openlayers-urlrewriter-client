@@ -23,7 +23,8 @@ const map = new Map({
     new TileLayer({
       //source: new OSM(),
       source : new XYZ({
-        url : "https://mapproxy.rest-gdi.geo-data.space/tiles/osm/webmercator/{z}/{x}/{y}.png"
+        url : "https://mapproxy.rest-gdi.geo-data.space/tiles/osm/webmercator/{z}/{x}/{y}.png",
+        maxZoom : 19
       })
     }),
     vectorLayer
