@@ -1,5 +1,4 @@
-import './style.css';
-import {Feature, Map, View} from 'ol';
+import {Feature, Map, Overlay, View} from 'ol';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
 import OSM from 'ol/source/OSM';
@@ -11,6 +10,8 @@ import { Circle } from 'ol/geom';
 import TileSource from 'ol/source/Tile';
 import XYZ from 'ol/source/XYZ';
 import * as olProj from 'ol/proj'
+import QRCode from 'qrcode'
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 proj4.defs("EPSG:31287","+proj=lcc +lat_0=47.5 +lon_0=13.3333333333333 +lat_1=49 +lat_2=46 +x_0=400000 +y_0=400000 +ellps=bessel +towgs84=577.326,90.129,463.919,5.137,1.474,5.297,2.4232 +units=m +no_defs +type=crs");
 proj4.defs('EPSG:3035', '+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=565.04,49.91,465.84,1.9848,-1.7439,9.0587,4.0772 +units=m +no_defs +type=crs')
@@ -39,7 +40,75 @@ const map = new Map({
 });
 
 
-document.getElementById("openBtn").onclick = async function(e) {
+const container = document.getElementById('popup');
+const content = document.getElementById('popup-content');
+const closer = document.getElementById('popup-closer');
+
+const scanBtn = document.getElementById("scanBtn");
+const openBtn = document.getElementById("openBtn");
+const idField = document.getElementById("identifierInput");
+
+  const overlay = new Overlay({
+    element: container,
+    autoPan: {
+      animation: {
+        duration: 250,
+      },
+    },
+  });
+  map.addOverlay(overlay)
+
+
+  map.on('click', async function(evt) {
+    map.forEachFeatureAtPixel(evt.pixel,
+      async function(feature, layer) {
+        //if(layer === vectorLayer) 
+        {
+          const id = feature.getProperties()["identifier"].value;
+          const codeImg = await QRCode.toDataURL(id);
+
+          const coordinate = evt.coordinate;
+          content.innerHTML = `<img src=${codeImg}></img>`;
+          overlay.setPosition(coordinate);
+        }
+      })
+  });
+
+
+    /**
+   * Add a click handler to hide the popup.
+   * @return {boolean} Don't follow the href.
+   */
+    closer.onclick = function() {
+      overlay.setPosition(undefined);
+      closer.blur();
+      return false;
+    };
+    
+    function onScanFailure(error) {
+      // handle scan failure, usually better to ignore and keep scanning.
+      // for example:
+      //console.warn(`Code scan error = ${error}`);
+    }
+
+    scanBtn.onclick = async function(e) {
+      let html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader",
+        { fps: 10, qrbox: {width: 350, height: 350} },
+        /* verbose= */ false);
+
+
+      html5QrcodeScanner.render((decodedText, decodedResult) => {
+        console.log(`Code matched = ${decodedText}`, decodedResult);
+
+        html5QrcodeScanner.clear();
+        idField.value = decodedText;
+        openBtn.click();
+      }, onScanFailure);
+    }
+
+
+openBtn.onclick = async function(e) {
   const identifier = document.getElementById("identifierInput").value;
   //const idParts = identifier.split(".");
   //const resultBody = await fetch("https://rewriter.rest-gdi.geo-data.space/" + idParts[1] + "/" + idParts[2] + "." + idParts[3] + "/" + idParts[4] + "/" + idParts[5] + "?outputFormat=application%2Fjson");
