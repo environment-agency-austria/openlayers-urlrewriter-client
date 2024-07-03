@@ -22,7 +22,7 @@ let vectorLayer = new VectorLayer();
 
 const idb = await openDB('hofapp', 4, {
   upgrade(db, oldVersion, newVersion, transaction, event) {
-    if(transaction.objectStore('imgs')) {
+    if(db.objectStoreNames.contains("imgs")) {
       db.deleteObjectStore('imgs');
     }
     const imgStore = db.createObjectStore('imgs',  { keyPath: 'url' });
