@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default {
   build: {
     sourcemap: true,
-	outDir: 'docs'
+	  outDir: 'docs'
   },
   base: '',
   server: {
@@ -16,11 +16,11 @@ export default {
   plugins : [
     VitePWA(
       { 
-      registerType: 'autoUpdate',
-      devOptions: {
-        enabled: true
+        registerType: 'autoUpdate',
+        devOptions: {
+        enabled: false
       },
-      manifest: false
+      manifest: false,
       })
   ]
 

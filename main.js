@@ -27,7 +27,10 @@ const map = new Map({
       //source: new OSM(),
       source : new XYZ({
         url : "https://mapproxy.rest-gdi.geo-data.space/tiles/osm/webmercator/{z}/{x}/{y}.png",
-        maxZoom : 19
+        maxZoom : 19,
+        tileLoadFunction : function(imageTile, src) {
+          imageTile.getImage().src = src;
+        }
       })
     }),
     vectorLayer
