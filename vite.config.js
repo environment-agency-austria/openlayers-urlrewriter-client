@@ -4,7 +4,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default {
   build: {
     sourcemap: true,
-	  outDir: 'docs'
+	  outDir: 'docs',
+    target: 'esnext'
   },
   base: '',
   server: {
@@ -23,14 +24,4 @@ export default {
       manifest: false,
       })
   ]
-
-  /*server: {
-    https: true
-  },
-  plugins: [
-    basicSsl({
-      name: 'test',
-      domains: ['*.custom.com'],
-    })]
-      */
 }
