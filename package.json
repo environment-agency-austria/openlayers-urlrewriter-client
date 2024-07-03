@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "html5-qrcode": "^2.3.8",
+    "idb": "^8.0.0",
     "ol": "latest",
     "proj4": "^2.10.0",
     "qrcode": "^1.5.3"

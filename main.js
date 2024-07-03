@@ -12,6 +12,7 @@ import XYZ from 'ol/source/XYZ';
 import * as olProj from 'ol/proj'
 import QRCode from 'qrcode'
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { openDB, deleteDB, wrap, unwrap } from 'idb';
 
 proj4.defs("EPSG:31287","+proj=lcc +lat_0=47.5 +lon_0=13.3333333333333 +lat_1=49 +lat_2=46 +x_0=400000 +y_0=400000 +ellps=bessel +towgs84=577.326,90.129,463.919,5.137,1.474,5.297,2.4232 +units=m +no_defs +type=crs");
 proj4.defs("EPSG:3035","+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
@@ -19,17 +20,46 @@ register(proj4);
 
 let vectorLayer = new VectorLayer();
 
+const idb = await openDB('hofapp', 3, {
+  upgrade(db, oldVersion, newVersion, transaction, event) {
+    db.deleteObjectStore('imgs');
+    const imgStore = db.createObjectStore('imgs',  { keyPath: 'url' });
+    imgStore.createIndex("url", "url");
+  }
+});
 
 const map = new Map({
   target: 'map',
   layers: [
     new TileLayer({
-      //source: new OSM(),
       source : new XYZ({
         url : "https://mapproxy.rest-gdi.geo-data.space/tiles/osm/webmercator/{z}/{x}/{y}.png",
         maxZoom : 19,
-        tileLoadFunction : function(imageTile, src) {
-          imageTile.getImage().src = src;
+        tileLoadFunction : async function(imageTile, src) {
+          const img = imageTile.getImage();
+
+          const imgStore = idb.transaction('imgs', 'readonly').objectStore('imgs');
+          const imgUrlIdx = imgStore.index('url');
+          const range = IDBKeyRange.only(src);
+
+          const cursor = await imgUrlIdx.openCursor(range);
+          if(cursor) {
+            console.log("laoding cached tile: " + src)
+            img.src = cursor.value.data;  
+          } else {
+            console.log("requesting tile: " + src)
+
+            img.src = src;
+            
+            const response = await fetch(src);
+            const blobResp = await response.blob();
+            const reader = new FileReader();
+            reader.onload = e => {
+              const imgStore = idb.transaction('imgs', 'readwrite').objectStore('imgs');
+              imgStore.put({url : src, data : reader.result});
+            }
+            reader.readAsDataURL(blobResp);
+          }
         }
       })
     }),
@@ -41,6 +71,24 @@ const map = new Map({
     projection: 'EPSG:31287'
   })
 });
+
+// In case a previous map state is found in localStorage, restore it
+const center = localStorage.getItem('center');
+const zoom = localStorage.getItem('zoom');
+if(center) {
+  map.getView().setCenter(JSON.parse(center));
+}
+if(zoom) {
+  map.getView().setZoom(JSON.parse(zoom));
+}
+
+map.getView().on('change', e => {
+  const center = map.getView().getCenter();
+  const zoom = map.getView().getZoom();
+  localStorage.setItem('center', JSON.stringify(center)); 
+  localStorage.setItem('zoom', JSON.stringify(zoom)); 
+  //const tx = idb.transaction(['toDoList'], 'readwrite');
+})
 
 
 const container = document.getElementById('popup');
