@@ -20,9 +20,9 @@ register(proj4);
 
 let vectorLayer = new VectorLayer();
 
-const idb = await openDB('hofapp', 3, {
+const idb = await openDB('hofapp', 4, {
   upgrade(db, oldVersion, newVersion, transaction, event) {
-    if(db.objectStore('imgs')) {
+    if(transaction.objectStore('imgs')) {
       db.deleteObjectStore('imgs');
     }
     const imgStore = db.createObjectStore('imgs',  { keyPath: 'url' });
