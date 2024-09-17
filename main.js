@@ -1,9 +1,11 @@
-import {Feature, Map, Overlay, View} from 'ol';
+import {Feature, Map as OLMap, Overlay, View} from 'ol';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
 import OSM from 'ol/source/OSM';
+import GPX from 'ol/format/GPX.js';
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON.js';
+import {Circle as CircleStyle, Fill, Stroke, Style} from 'ol/style.js';
 import  proj4  from 'proj4/dist/proj4';
 import { register } from 'ol/proj/proj4';
 import { Circle } from 'ol/geom';
@@ -13,24 +15,168 @@ import * as olProj from 'ol/proj'
 import QRCode from 'qrcode'
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { openDB, deleteDB, wrap, unwrap } from 'idb';
+import {bbox as bboxStrategy} from 'ol/loadingstrategy.js';
+import FileSaver from 'file-saver';
 
+let isOnline = false;
+
+document.getElementById("loginBtn").onclick = e => {
+  const user = document.getElementById("user").value;
+  const pwd = document.getElementById("pwd").value;
+
+  localStorage.setItem('lastUser', user); 
+
+  initMap(user, pwd);
+}
+
+try {  
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 1000);
+  const isOnlineReq = await fetch('http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:wfsuser_view&outputFormat=application/json',
+                             { signal: controller.signal });
+  clearTimeout(id);
+  const isOnlineResult = await isOnlineReq.json();
+  isOnline = true;
+} catch(e) {
+  isOnline = false;
+}
+
+
+if(!isOnline) {
+  const lastUser = localStorage.getItem("lastUser");
+  initMap(lastUser);
+}
+
+
+function readAsDataURL(file) {
+  return new Promise((resolve, reject)=>{
+    let fileReader = new FileReader();
+    fileReader.onload = function(){
+      return resolve({data:fileReader.result, name:file.name, size: file.size, type: file.type});
+    }
+    fileReader.readAsDataURL(file);
+  })
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, _) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function initMap(user, password) {
+  document.getElementById("loginDiv").innerHTML = '';
+
+  const idb = await openDB('hofapp', 20, {
+    upgrade(db, oldVersion, newVersion, transaction, event) {
+      if(db.objectStoreNames.contains("imgs")) {
+        db.deleteObjectStore('imgs');
+      }
+      if(db.objectStoreNames.contains("txt")) {
+        db.deleteObjectStore("txt");
+      }
+      if(db.objectStoreNames.contains("file")) {
+        db.deleteObjectStore("file");
+      }
+      const imgStore = db.createObjectStore('imgs',  { keyPath: 'url' });
+      imgStore.createIndex("url", "url");
+      const txtStore = db.createObjectStore('txt',  { keyPath: 'url' });
+      txtStore.createIndex("url", "url");
+      const fileStore = db.createObjectStore('file',  { keyPath : 'filename' });
+      fileStore.createIndex("filename", "filename");
+      fileStore.createIndex("gid", "gid", {unique : false});
+      fileStore.createIndex("uploadpending", "uploadpending", {unique : false});
+      fileStore.createIndex("removalpending", "removalpending", {unique : false})
+    }
+  });
+
+  function fetchWithCreds(resource, options = {}) {
+    options.headers = options.headers ?? {};
+    options.headers['Authorization'] = `Basic ${window.btoa(user + ':' + password)}`;
+
+    return fetch(resource, options);
+  }
+
+  async function fetchTextIdbCached(fetchFun, resource, options) {
+    if(!isOnline) {
+      const txtStore = idb.transaction('txt', 'readonly').objectStore('txt');
+      // const txtUrlIdx = txtStore.index('url');
+      // const range = IDBKeyRange.only(resource);
+      // const cursor = await txtUrlIdx.openCursor(range);
+      return (await txtStore.get(resource)).data;
+    } else {
+      const fetchResTxt = await (await fetchFun(resource, options)).text();
+      const txtStore = idb.transaction('txt', 'readwrite').objectStore('txt');
+      txtStore.put({url : resource, data : fetchResTxt});
+      return fetchResTxt;
+    }
+}
+
+  async function loadGPXFromFiles(map, gpxLayer) {
+    const gpxs = [];
+    if(isOnline) {
+      const gpxReq = await fetchTextIdbCached(fetchWithCreds, 'http://192.168.56.101:8081/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&cql_filter=mimetype=%27application%2Fgpx%2Bxml%27&outputformat=json')
+      const gpxjs = JSON.parse(gpxReq);
+      for(const gpxft of gpxjs["features"]) {
+        gpxs.push(gpxft.properties.fdata);
+      }
+
+    } else {
+      //TODO: Store mimetype in idb instead of full scan
+      const allFiles = await idb.transaction('file', 'readonly').objectStore('file').index('removalpending').getAll(IDBKeyRange.only(0))
+      const gpxFiles = allFiles.filter(dbfile => dbfile.filename.indexOf(".gpx") > -1);
+      for(const gpx of gpxFiles) {
+        let b64gpx = await blobToBase64(gpx.blob);
+        b64gpx = b64gpx.substring(b64gpx.indexOf(',') + 1);
+        gpxs.push(b64gpx);
+      }
+    }
+    
+    gpxLayer.getSource().clear();
+    for(const gpx of gpxs) {
+      const gpxDecoded = (window.atob(gpx));
+      const GPXfeatures = gpxLayer.getSource().getFormat().readFeatures(gpxDecoded, {featureProjection : map.getView().getProjection()});
+      gpxLayer.getSource().addFeatures(GPXfeatures);
+    }
+  }
+
+  // // 1. load user data
+  // const userUrl  = 'http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:wfsuser_view&outputFormat=application/json';
+  // const resp = await fetchTextIdbCached(fetchWithCreds, userUrl);
+  // const userDetails = (JSON.parse(resp)).features[0].properties;
+
+  const gpxLayer = new VectorLayer({
+    source: new VectorSource({
+       format: new GPX(),
+    }),
+  });
+
+  
 proj4.defs("EPSG:31287","+proj=lcc +lat_0=47.5 +lon_0=13.3333333333333 +lat_1=49 +lat_2=46 +x_0=400000 +y_0=400000 +ellps=bessel +towgs84=577.326,90.129,463.919,5.137,1.474,5.297,2.4232 +units=m +no_defs +type=crs");
+proj4.defs("EPSG:4326","+proj=longlat +datum=WGS84 +no_defs +type=crs");
 proj4.defs("EPSG:3035","+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
 register(proj4); 
 
-let vectorLayer = new VectorLayer();
 
-const idb = await openDB('hofapp', 4, {
-  upgrade(db, oldVersion, newVersion, transaction, event) {
-    if(db.objectStoreNames.contains("imgs")) {
-      db.deleteObjectStore('imgs');
-    }
-    const imgStore = db.createObjectStore('imgs',  { keyPath: 'url' });
-    imgStore.createIndex("url", "url");
-  }
+// const userGeometriesReq = await fetchWithCreds("http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:protectedsite_view&outputFormat=application/json&srsname=EPSG:31287")
+// const userGeometries = await userGeometriesReq.text();
+
+const userGeometries = await fetchTextIdbCached(fetchWithCreds, "http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:protectedsite_view&outputFormat=application/json&srsname=EPSG:31287");
+const vectorSource = new VectorSource({
+   features: new GeoJSON().readFeatures(userGeometries),
 });
 
-const map = new Map({
+const vectorLayer = new VectorLayer({
+  source: vectorSource,
+  style: {
+    'stroke-width': 0.75,
+    'stroke-color': 'white',
+    'fill-color': 'rgba(255,0,0,0.5)',
+  }});
+
+const map = new OLMap({
   target: 'map',
   layers: [
     new TileLayer({
@@ -40,19 +186,16 @@ const map = new Map({
         tileLoadFunction : async function(imageTile, src) {
           const img = imageTile.getImage();
 
-          const imgStore = idb.transaction('imgs', 'readonly').objectStore('imgs');
-          const imgUrlIdx = imgStore.index('url');
-          const range = IDBKeyRange.only(src);
+          // const imgStore = idb.transaction('imgs', 'readonly').objectStore('imgs').get(src);
+          // const imgUrlIdx = imgStore.index('url');
+          // const range = IDBKeyRange.only(src);
 
-          const cursor = await imgUrlIdx.openCursor(range);
-          if(cursor) {
-            console.log("laoding cached tile: " + src)
-            img.src = cursor.value.data;  
+          
+          const imgData = (await idb.transaction('imgs', 'readonly').objectStore('imgs').get(src))?.data;
+          if(imgData) {
+              img.src = imgData;
           } else {
-            console.log("requesting tile: " + src)
-
             img.src = src;
-            
             const response = await fetch(src);
             const blobResp = await response.blob();
             const reader = new FileReader();
@@ -65,7 +208,8 @@ const map = new Map({
         }
       })
     }),
-    vectorLayer
+    vectorLayer,
+    gpxLayer
   ],
   view: new View({
     center: [401306 , 423398],
@@ -74,12 +218,14 @@ const map = new Map({
   })
 });
 
+map.getView().fit(vectorSource.getExtent());  
+
 // In case a previous map state is found in localStorage, restore it
-const center = localStorage.getItem('center');
+//const center = localStorage.getItem('center');
 const zoom = localStorage.getItem('zoom');
-if(center) {
-  map.getView().setCenter(JSON.parse(center));
-}
+// if(center) {
+//   map.getView().setCenter(JSON.parse(center));
+// }
 if(zoom) {
   map.getView().setZoom(JSON.parse(zoom));
 }
@@ -97,10 +243,6 @@ const container = document.getElementById('popup');
 const content = document.getElementById('popup-content');
 const closer = document.getElementById('popup-closer');
 
-const scanBtn = document.getElementById("scanBtn");
-const openBtn = document.getElementById("openBtn");
-const idField = document.getElementById("identifierInput");
-
   const overlay = new Overlay({
     element: container,
     autoPan: {
@@ -112,19 +254,249 @@ const idField = document.getElementById("identifierInput");
   map.addOverlay(overlay)
 
 
+function b64toFile(b64Data, filename, contentType) {
+    var sliceSize = 512;
+    var byteCharacters = atob(b64Data);
+    var byteArrays = [];
+
+    for (var offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+        var slice = byteCharacters.slice(offset, offset + sliceSize);
+        var byteNumbers = new Array(slice.length);
+
+        for (var i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+        }
+        var byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+    }
+    var file = new File(byteArrays, filename, {type: contentType});
+    return file;
+}
+
+async function fetchWfsFileMetadata(gid) {
+  let requestURL = 'http://192.168.56.101:8081/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&propertyname=fid,psiteid,filename,filesize,mimetype,userids&outputformat=json';
+  if(gid) {
+    requestURL += '&cql_filter=psiteid='+gid;
+  }
+  const fileReq = await fetchWithCreds(requestURL)
+  return (await fileReq.json()).features.map(ft => ft.properties);
+}
+
+async function syncFiles() {
+  // sync locally cached uploads
+  let fileStore = idb.transaction('file', 'readonly').objectStore('file');
+  const pendingUploads = await fileStore.index('uploadpending').getAll(IDBKeyRange.only(1));
+  for (const dbfile of pendingUploads) {
+    const file = new File([dbfile.blob], dbfile.filename);
+    await uploadFileToWfs(dbfile.gid, dbfile.filename, dbfile.filesize, dbfile.mimetype, file)
+    //set cached entry to not pending
+    dbfile.uploadpending = 0;
+    idb.transaction('file', 'readwrite').objectStore('file').put(dbfile);
+  }
+
+  // sync locally cached deletes
+  fileStore = idb.transaction('file', 'readonly').objectStore('file');
+  const pendingRemovals = await fileStore.index('removalpending').getAll(IDBKeyRange.only(1));
+  for (const dbfile of pendingRemovals) {
+    deleteFile(dbfile.filename);
+  }
+
+  // re-read remote and local state again
+  const filesRemote = await fetchWfsFileMetadata();
+  const remoteNameFileMap = new Map(filesRemote.map((remFile) => [remFile.filename, remFile]));
+  const localFiles = await idb.transaction('file', 'readonly').objectStore('file').getAll();
+  const localNameFileMap = new Map(localFiles.map(dbfile => [dbfile.filename, dbfile]));
+
+  // download files which are present remotly, but not locally
+  const filesMissingLocallyMap = new Map(remoteNameFileMap);
+  localNameFileMap.forEach(dbfile => filesMissingLocallyMap.delete(dbfile.filename));
+  for(const [fileName, fileMetaData] of filesMissingLocallyMap){
+    const file = await downloadFile(fileName);
+    idb.transaction('file', 'readwrite').objectStore('file').put({
+      ...fileMetaData,
+      uploadPending : 0,
+      gid: fileMetaData.psiteid,
+      blob : file
+    });
+  }
+
+  // delete files from local storage which are no longer present remote (deleted by other client)
+  const fileMissingRemoteMap = new Map(localNameFileMap);
+  remoteNameFileMap.forEach(dbfile => fileMissingRemoteMap.delete(dbfile.filename));
+  for(const fileName of fileMissingRemoteMap.keys()) {
+    idb.transaction('file', 'readwrite').objectStore('file').delete(fileName);
+  }
+}
+
+if(isOnline) {
+  await syncFiles();
+}
+
+
+loadGPXFromFiles(map, gpxLayer);
+
+
+async function uploadFileToWfs(id, filename, filesize, mimetype, userids, file) {
+  const urlResult = await readAsDataURL(file);
+  const dataWithoutLink = urlResult.data.substring(urlResult.data.indexOf(',') + 1);
+
+  const request = `<wfs:Transaction service="WFS" version="1.1.0"
+  xmlns:wfs="http://www.opengis.net/wfs"
+  xmlns:gml="http://www.opengis.net/gml"
+  xmlns:wfstest="wfstest"> 
+
+    <wfs:Insert>
+        <wfstest:protectedsite_files_view>
+            <wfstest:psiteid>${id}</wfstest:psiteid>
+            <wfstest:filename>${filename}</wfstest:filename>
+            <wfstest:filesize>${filesize}</wfstest:filesize>
+            <wfstest:mimetype>${mimetype}</wfstest:mimetype>
+            <wfstest:userids>${userids}</wfstest:userids>
+            <wfstest:fdata>${dataWithoutLink}</wfstest:fdata>
+        </wfstest:protectedsite_files_view>
+    </wfs:Insert>
+  </wfs:Transaction>`;
+
+  await fetchWithCreds('http://192.168.56.101:8081/geoserver/wfs', 
+  {
+    method : 'POST', 
+    body : request
+  });
+}
+
+async function createFileContents(id, content, coordinate) {
+  let files = [];
+  if(isOnline) {
+    files = await fetchWfsFileMetadata(id);
+  } else {
+    const fileStore = idb.transaction('file', 'readonly').objectStore('file');
+    const fileGidIdx = fileStore.index('gid');
+    const range = IDBKeyRange.only(id);
+    for await (const cursor of fileGidIdx.iterate(range)) {
+      const dbFile = cursor.value;
+      if(!dbFile.removalpending) {
+        files.push(dbFile);
+      }
+    }
+  }
+ 
+  content.innerHTML = '';
+  for(let file of files) {
+    const downloadLink = document.createElement("a");
+    downloadLink.innerText = `${file.filename} (${file.filesize})`;
+    downloadLink.setAttribute("href", "#");
+    downloadLink.onclick = async e => { 
+      const data = await downloadFile(file.filename); 
+      FileSaver.saveAs(data, file.filename, 'application/octet_stream');
+      e.preventDefault(); 
+    }
+    content.appendChild(downloadLink);
+
+    // Allow deletion only for owner
+    if(file.userids.split(',').includes('bauer1')) {
+      const deleteLink = document.createElement("a");
+      deleteLink.innerText = " X";
+      deleteLink.setAttribute("href", "#");
+      deleteLink.onclick = (e) => { e.preventDefault(); deleteFile(file.filename); setTimeout(() => createFileContents(id, content, coordinate), 100)}
+      content.appendChild(deleteLink);
+
+      content.appendChild(document.createElement("br"));
+    }
+  }
+
+  //Also re-create gpx layer when file content changed
+  loadGPXFromFiles(map, gpxLayer);
+
+  const fileInput =  document.createElement("input", {id : "fileInput"});
+  fileInput.setAttribute("type", "file");
+  content.appendChild(fileInput);
+
+  overlay.setPosition(coordinate);
+
+  fileInput.addEventListener('change', async e => {
+    var file = e.target.files[0];
+    const mimetype = file.name.toLowerCase().endsWith(".gpx") ? "application/gpx+xml" : "application/octet-stream";
+
+    const userIds = window.prompt('Beistrich-getrennte Liste von zusätzlich leseberechtigten Benutzern:');
+
+    const rawBytes = await file.arrayBuffer();
+    if(isOnline) {
+      await uploadFileToWfs(id, file.name, rawBytes.byteLength, mimetype, userIds, file);
+    }
+
+    // Upload file to local store too
+    const blob = new Blob([rawBytes], { type: mimetype });
+    const fileStore = idb.transaction('file', 'readwrite').objectStore('file');
+    fileStore.put({
+      uploadpending : isOnline ? 0 : 1, //TODO - set to  true in case upload succeeds
+      removalpending : 0,
+      gid : id,
+      mimetype : mimetype,
+      filesize : rawBytes.byteLength,
+      filename : file.name,
+      userids : userIds,
+      blob : blob
+    });
+
+      createFileContents(id, content, coordinate)
+  });
+}
+
+async function downloadFile(fileName) {
+  if(isOnline) {
+    const fileReqTxt = await (await fetchWithCreds(`http://192.168.56.101:8081/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&cql_filter=filename='${fileName}'&outputformat=json`)).text();
+    const files = JSON.parse(fileReqTxt);
+    const feature = files["features"][0];
+    const content = feature["properties"]["fdata"];
+    return b64toFile(content);
+  } else {
+    const fileStore = idb.transaction('file', 'readonly').objectStore('file');
+    const cursor = await fileStore.index('filename').openCursor(IDBKeyRange.only(fileName));
+    if(cursor) {
+      const entry = cursor?.value;
+      return new File([entry.blob], fileName);
+    }
+  }
+}
+
+async function deleteFile(filename) {
+  if(isOnline) {
+    const request = `<wfs:Transaction service="WFS" version="1.1.0"
+    xmlns:wfs="http://www.opengis.net/wfs"
+    xmlns:gml="http://www.opengis.net/gml"
+    xmlns:wfstest="wfstest"> 
+
+    <wfs:Delete typeName="wfstest:protectedsite_files_view">
+      <Filter>
+        <PropertyIsEqualTo>
+          <PropertyName>filename</PropertyName>
+          <Literal>${filename}</Literal>
+        </PropertyIsEqualTo>
+      </Filter>
+    </wfs:Delete>
+    </wfs:Transaction>`;
+
+    const result = await fetchWithCreds('http://192.168.56.101:8081/geoserver/wfs', {method : 'POST', body : request})
+    await result.text();
+    idb.transaction('file', 'readwrite').objectStore('file').delete(filename);
+  } else {
+    const dbFile = await idb.transaction('file', 'readonly').objectStore('file').get(filename);
+    dbFile.removalpending = 1;
+    idb.transaction('file', 'readwrite').objectStore('file').put(dbFile);
+  }
+}
+
   map.on('click', async function(evt) {
     map.forEachFeatureAtPixel(evt.pixel,
       async function(feature, layer) {
-        //if(layer === vectorLayer) 
+        if(layer === vectorLayer) 
         {
-          const id = feature.getProperties()["identifier"].value;
-          const codeImg = await QRCode.toDataURL(id);
+          const props = feature.getProperties();
+          const id = props["gid"];
 
-          const coordinate = evt.coordinate;
-          content.innerHTML = `<img src=${codeImg}></img>`;
-          overlay.setPosition(coordinate);
-        }
-      })
+          createFileContents(id, content, evt.coordinate);
+      }
+    })
   });
 
 
@@ -137,70 +509,4 @@ const idField = document.getElementById("identifierInput");
       closer.blur();
       return false;
     };
-    
-    function onScanFailure(error) {
-      // handle scan failure, usually better to ignore and keep scanning.
-      // for example:
-      //console.warn(`Code scan error = ${error}`);
-    }
-
-    scanBtn.onclick = async function(e) {
-      let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader",
-        { fps: 10, qrbox: {width: 350, height: 350} },
-        /* verbose= */ false);
-
-
-      html5QrcodeScanner.render((decodedText, decodedResult) => {
-        console.log(`Code matched = ${decodedText}`, decodedResult);
-
-        html5QrcodeScanner.clear();
-        idField.value = decodedText;
-        openBtn.click();
-      }, onScanFailure);
-    }
-
-
-openBtn.onclick = async function(e) {
-  const identifier = document.getElementById("identifierInput").value;
-  //const idParts = identifier.split(".");
-  //const resultBody = await fetch("https://rewriter.rest-gdi.geo-data.space/" + idParts[1] + "/" + idParts[2] + "." + idParts[3] + "/" + idParts[4] + "/" + idParts[5] + "?outputFormat=application%2Fjson");
-  let resultBody = null;
-  try {
-     resultBody = await fetch(identifier + "?outputFormat=application%2Fjson&srsName=epsg%3A31287");
-  }catch(e) {
-  }
-
-  if(resultBody === null || !resultBody.ok) {
-    alert("Fehler beim Auflösen des Identifiers");
-    return;
-  }
-
-  const json = await resultBody.json();
-  
-  map.removeLayer(vectorLayer);
-
-  let projection = {};
-  try {
-    const crsName = json["crs"]["properties"]["name"];
-    projection = {dataProjection: crsName, featureProjection : 'EPSG:31287'};
-  }catch(e){}
-
-
-  const ft = new GeoJSON().readFeatures(json, projection)
-
-  vectorLayer = new VectorLayer({
-    source: new VectorSource({
-      features : ft
-    }),
-    declutter : true
-  });
-  
-  map.addLayer(vectorLayer);
-
-  let bounds = [json.bbox[1], json.bbox[0],json.bbox[3], json.bbox[2]];
-  if(projection.dataProjection) {
-    bounds = olProj.transformExtent(bounds, projection.dataProjection, 'EPSG:31287');
-  }
-  map.getView().fit(bounds);
-};
+}

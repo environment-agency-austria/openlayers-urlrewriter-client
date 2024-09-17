@@ -8,12 +8,12 @@ export default {
     target: 'esnext'
   },
   base: '',
-  server: {
+  /*server: {
     https: {
       pfx: fs.readFileSync('./cert/localhost.p12'),
       passphrase: ''
     }
-  },
+  },*/
   plugins : [
     VitePWA(
       { 

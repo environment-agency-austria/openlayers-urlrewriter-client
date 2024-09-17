@@ -12,10 +12,12 @@
     "vite-plugin-pwa": "^0.20.0"
   },
   "dependencies": {
+    "file-saver": "^2.0.5",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.0",
     "ol": "latest",
     "proj4": "^2.10.0",
-    "qrcode": "^1.5.3"
+    "qrcode": "^1.5.3",
+    "workbox-strategies": "^7.1.0"
   }
 }
