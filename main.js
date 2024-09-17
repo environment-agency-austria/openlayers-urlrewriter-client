@@ -32,7 +32,7 @@ document.getElementById("loginBtn").onclick = e => {
 try {  
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), 1000);
-  const isOnlineReq = await fetch('http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:wfsuser_view&outputFormat=application/json',
+  const isOnlineReq = await fetch('https://192.168.56.101:8443/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:wfsuser_view&outputFormat=application/json',
                              { signal: controller.signal });
   clearTimeout(id);
   const isOnlineResult = await isOnlineReq.json();
