@@ -117,7 +117,7 @@ async function initMap(user, password) {
   async function loadGPXFromFiles(map, gpxLayer) {
     const gpxs = [];
     if(isOnline) {
-      const gpxReq = await fetchTextIdbCached(fetchWithCreds, 'http://192.168.56.101:8081/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&cql_filter=mimetype=%27application%2Fgpx%2Bxml%27&outputformat=json')
+      const gpxReq = await fetchTextIdbCached(fetchWithCreds, 'https://192.168.56.101:8443/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&cql_filter=mimetype=%27application%2Fgpx%2Bxml%27&outputformat=json')
       const gpxjs = JSON.parse(gpxReq);
       for(const gpxft of gpxjs["features"]) {
         gpxs.push(gpxft.properties.fdata);
@@ -143,7 +143,7 @@ async function initMap(user, password) {
   }
 
   // // 1. load user data
-  // const userUrl  = 'http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:wfsuser_view&outputFormat=application/json';
+  // const userUrl  = 'https://192.168.56.101:8443/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:wfsuser_view&outputFormat=application/json';
   // const resp = await fetchTextIdbCached(fetchWithCreds, userUrl);
   // const userDetails = (JSON.parse(resp)).features[0].properties;
 
@@ -160,10 +160,10 @@ proj4.defs("EPSG:3035","+proj=laea +lat_0=52 +lon_0=10 +x_0=4321000 +y_0=3210000
 register(proj4); 
 
 
-// const userGeometriesReq = await fetchWithCreds("http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:protectedsite_view&outputFormat=application/json&srsname=EPSG:31287")
+// const userGeometriesReq = await fetchWithCreds("https://192.168.56.101:8443/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:protectedsite_view&outputFormat=application/json&srsname=EPSG:31287")
 // const userGeometries = await userGeometriesReq.text();
 
-const userGeometries = await fetchTextIdbCached(fetchWithCreds, "http://192.168.56.101:8081/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:protectedsite_view&outputFormat=application/json&srsname=EPSG:31287");
+const userGeometries = await fetchTextIdbCached(fetchWithCreds, "https://192.168.56.101:8443/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=wfsttest:protectedsite_view&outputFormat=application/json&srsname=EPSG:31287");
 const vectorSource = new VectorSource({
    features: new GeoJSON().readFeatures(userGeometries),
 });
@@ -274,7 +274,7 @@ function b64toFile(b64Data, filename, contentType) {
 }
 
 async function fetchWfsFileMetadata(gid) {
-  let requestURL = 'http://192.168.56.101:8081/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&propertyname=fid,psiteid,filename,filesize,mimetype,userids&outputformat=json';
+  let requestURL = 'https://192.168.56.101:8443/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&propertyname=fid,psiteid,filename,filesize,mimetype,userids&outputformat=json';
   if(gid) {
     requestURL += '&cql_filter=psiteid='+gid;
   }
@@ -357,7 +357,7 @@ async function uploadFileToWfs(id, filename, filesize, mimetype, userids, file) 
     </wfs:Insert>
   </wfs:Transaction>`;
 
-  await fetchWithCreds('http://192.168.56.101:8081/geoserver/wfs', 
+  await fetchWithCreds('https://192.168.56.101:8443/geoserver/wfs', 
   {
     method : 'POST', 
     body : request
@@ -444,7 +444,7 @@ async function createFileContents(id, content, coordinate) {
 
 async function downloadFile(fileName) {
   if(isOnline) {
-    const fileReqTxt = await (await fetchWithCreds(`http://192.168.56.101:8081/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&cql_filter=filename='${fileName}'&outputformat=json`)).text();
+    const fileReqTxt = await (await fetchWithCreds(`https://192.168.56.101:8443/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=wfsttest:protectedsite_files_view&cql_filter=filename='${fileName}'&outputformat=json`)).text();
     const files = JSON.parse(fileReqTxt);
     const feature = files["features"][0];
     const content = feature["properties"]["fdata"];
@@ -476,7 +476,7 @@ async function deleteFile(filename) {
     </wfs:Delete>
     </wfs:Transaction>`;
 
-    const result = await fetchWithCreds('http://192.168.56.101:8081/geoserver/wfs', {method : 'POST', body : request})
+    const result = await fetchWithCreds('https://192.168.56.101:8443/geoserver/wfs', {method : 'POST', body : request})
     await result.text();
     idb.transaction('file', 'readwrite').objectStore('file').delete(filename);
   } else {
