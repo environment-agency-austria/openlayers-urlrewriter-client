@@ -288,7 +288,7 @@ async function syncFiles() {
   const pendingUploads = await fileStore.index('uploadpending').getAll(IDBKeyRange.only(1));
   for (const dbfile of pendingUploads) {
     const file = new File([dbfile.blob], dbfile.filename);
-    await uploadFileToWfs(dbfile.gid, dbfile.filename, dbfile.filesize, dbfile.mimetype, file)
+    await uploadFileToWfs(dbfile.gid, dbfile.filename, dbfile.filesize, dbfile.mimetype, dbfile.userids, file)
     //set cached entry to not pending
     dbfile.uploadpending = 0;
     idb.transaction('file', 'readwrite').objectStore('file').put(dbfile);
@@ -380,8 +380,22 @@ async function createFileContents(id, content, coordinate) {
     }
   }
  
-  content.innerHTML = '';
+  content.innerHTML = `<table id="fileTable" class="fileTable"> 
+  <tr>
+  <th align=left>Dateiname</th>
+  <th align=left></th>
+  <th align=left>Berechtigt</th>
+  <th align=left>Sync</th>
+  </tr>
+  </table>`;
+  const table = document.getElementById("fileTable");
+  
   for(let file of files) {
+    const trFile = document.createElement("tr");
+    table.append(trFile);
+
+    const tdLink = document.createElement("td");
+    trFile.append(tdLink);
     const downloadLink = document.createElement("a");
     downloadLink.innerText = `${file.filename} (${file.filesize})`;
     downloadLink.setAttribute("href", "#");
@@ -390,18 +404,28 @@ async function createFileContents(id, content, coordinate) {
       FileSaver.saveAs(data, file.filename, 'application/octet_stream');
       e.preventDefault(); 
     }
-    content.appendChild(downloadLink);
+    tdLink.appendChild(downloadLink);
 
-    // Allow deletion only for owner
-    if(file.userids.split(',').includes('bauer1')) {
+    const tdDelete = document.createElement("td");
+    trFile.append(tdDelete);
+    // Allow deletion only for owner - TODO
+    if(file.userids.split(',').includes('bauer1')) 
+    {
       const deleteLink = document.createElement("a");
-      deleteLink.innerText = " X";
+      deleteLink.innerHTML = '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAmJLR0QA/4ePzL8AAAAHdElNRQfoCAYQKB0BpUZRAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI0LTA4LTA2VDE2OjQwOjI4KzAwOjAw9vSFoAAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNC0wOC0wNlQxNjo0MDoyOCswMDowMIepPRwAAAHISURBVEhL7Za9rgFREMf/u66IBokoREFBg4hK4xkIIjwD8QIKD6DQikqr1BOlhyDRqDQEkUh83p25Z5e91+5eN3T3l5zMzJ7dM2dmz8yudFXAG/mVg0qlgtVqBZvNxvblcoHD4UCn04HT6eRrRlg68Hq9vLgRVvuThXzIdDrlxUulEi90P5rNJt/T6/VYGqGLYDabwW63s+7xeFAoFDAajTAejxGJRHA4HHhOlmW+z+fzIRAIYDKZYLlc8tzpdEIwGNTSSbthut0uOXrJqFarYtXrVYtgPp+j3W6j3+9zahqNBs7nM6fDCpfLhXq9DrfbjVqthmw2i1Qq9TVJDu4pl8u8i2ehZ8LhsLBu/HjJap7/AkX8HdNTtFgsIEkSWq0W28lkkm1iOByyPhgM2DbC1MFut2O5Xq91klD1zWbD0ghTB3Qc76V29BRU/f7aI0wdvIJ/B5aYOlDPtVob+/2eJXE8HnXSCFMHfr8fiUQC6XSabaXKkclkWI/FYojH44hGo2wbIipaI5/P/7lVhEIhYd146Tt4VBMfQmpQCqijUq+nFNHn0QxqF9vtlvVcLsdSh4hER7FY5JCfGUp7Fk/reftfxZvrAPgEzoWq38Rr1WYAAAAASUVORK5CYII="/>';
       deleteLink.setAttribute("href", "#");
       deleteLink.onclick = (e) => { e.preventDefault(); deleteFile(file.filename); setTimeout(() => createFileContents(id, content, coordinate), 100)}
-      content.appendChild(deleteLink);
-
-      content.appendChild(document.createElement("br"));
+      tdDelete.appendChild(deleteLink);
+      //content.appendChild(document.createElement("br"));
     }
+
+    const tdRights = document.createElement("td");
+    trFile.append(tdRights);
+    tdRights.innerText = file.userids;
+
+    const tdSync = document.createElement("td");
+    trFile.append(tdSync);
+    tdSync.innerText = file.uploadpending ? 'N' : 'Y';
   }
 
   //Also re-create gpx layer when file content changed
@@ -417,7 +441,11 @@ async function createFileContents(id, content, coordinate) {
     var file = e.target.files[0];
     const mimetype = file.name.toLowerCase().endsWith(".gpx") ? "application/gpx+xml" : "application/octet-stream";
 
-    const userIds = window.prompt('Beistrich-getrennte Liste von zusätzlich leseberechtigten Benutzern:');
+    let userIds = window.prompt('Beistrich-getrennte Liste von zusätzlich leseberechtigten Benutzern:');
+    if(userIds) {
+      userIds += ","
+    }
+    userIds += "bauer1";
 
     const rawBytes = await file.arrayBuffer();
     if(isOnline) {
