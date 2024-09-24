@@ -84,28 +84,30 @@ const idField = document.getElementById("identifierInput");
       closer.blur();
       return false;
     };
-    
-    function onScanFailure(error) {
-      // handle scan failure, usually better to ignore and keep scanning.
-      // for example:
-      //console.warn(`Code scan error = ${error}`);
-    }
 
     scanBtn.onclick = async function(e) {
+      document.getElementById("readerbase").style.visibility='visible';
+
       let html5QrcodeScanner = new Html5QrcodeScanner(
         "reader",
-        { fps: 10, qrbox: {width: 350, height: 350} },
+        { fps: 10, qrbox: {width: 500, height: 500} },
         /* verbose= */ false);
-
 
       html5QrcodeScanner.render((decodedText, decodedResult) => {
         console.log(`Code matched = ${decodedText}`, decodedResult);
 
+        document.getElementById("readerbase").style.visibility='hidden';
         html5QrcodeScanner.clear();
         idField.value = decodedText;
         openBtn.click();
-      }, onScanFailure);
+      }, e => {
+        document.getElementById("html5-qrcode-button-camera-stop").onclick = e => {
+          html5QrcodeScanner.clear();
+          document.getElementById("readerbase").style.visibility='hidden';}
+      });
     }
+
+    scanBtn.click();
 
 
 openBtn.onclick = async function(e) {

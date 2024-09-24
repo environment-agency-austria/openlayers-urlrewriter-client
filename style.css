@@ -4,12 +4,21 @@ html, body {
   margin: 0;
   height: 100%;
 }
+
+#maindiv {
+  height: 100%; 
+  width: 100%; 
+  display: flex;
+}
+
 #map {
   position: relative;
   top: 0;
   bottom: 0;
-  width: 100%;
-  height: 90%;
+ /* width: 100%;
+  height: 90%;*/
+  min-height: 0;
+  flex: 1; /* Fill the available space */
 }
 
 .ol-popup {
