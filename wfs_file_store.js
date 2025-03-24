@@ -45,7 +45,7 @@ export function fetchWithCreds(user, password, resource, options = {}) {
 export async function fetchWfsFileMetadata(geoserver_address, file_wfs_name, user, password, gid) {
     let requestURL = geoserver_address + '/geoserver/wfs/?service=WFS&version=2.0.0&request=GetFeature&typeNames=' + file_wfs_name + '&propertyname=fid,objectid,filename,filesize,mimetype,userids&outputformat=json';
     if(gid) {
-        requestURL += '&cql_filter=objectid='+gid;
+        requestURL += `&cql_filter=objectid='${gid}'`;
     }
     const fileReq = await fetchWithCreds(user, password, requestURL)
     return (await fileReq.json()).features.map(ft => ft.properties);

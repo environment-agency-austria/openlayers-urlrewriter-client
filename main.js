@@ -74,7 +74,7 @@ const idField = document.getElementById("identifierInput");
           content.innerHTML = "<table>" + rows + '</table><br><div id="filearea"/>';
           overlay.setPosition(coordinate);
 
-          const fid = feature.get("fid");
+          const fid = feature.get(feature_id_property);
           const fileTable = await createFileContents(fid,  document.getElementById("filearea"));
         }
       })
