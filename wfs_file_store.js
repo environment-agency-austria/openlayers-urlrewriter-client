@@ -37,7 +37,7 @@ function readAsDataURL(file) {
 
 export function fetchWithCreds(user, password, resource, options = {}) {
     options.headers = options.headers ?? {};
-    options.headers['Authorization'] = `Basic ${window.btoa(user + ':' + password)}`;
+    //options.headers['Authorization'] = `Basic ${window.btoa(user + ':' + password)}`;
 
     return fetch(resource, options);
   }
