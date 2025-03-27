@@ -26,10 +26,10 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
 
-      - name: Set Node.js 16.x
+      - name: Set Node.js 22.x
         uses: actions/setup-node@v3
         with:
-          node-version: 16.x
+          node-version: 22.x
 
       - name: Run install
         uses: borales/actions-yarn@v4
