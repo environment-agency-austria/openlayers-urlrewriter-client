@@ -86,43 +86,45 @@ const idField = document.getElementById("identifierInput");
   async function createFileContents(id, parentElement) {
     let files = await fetchWfsFileMetadata(geoserver_address, file_wfs_name, 'gast', 'gast', id);
    
-    const content = document.createElement("div");
-    parentElement.appendChild(content);
+    if(files.length > 0) {
+      const content = document.createElement("div");
+      parentElement.appendChild(content);
 
-    content.innerHTML = `
-    <div style="margin-top: 10px"><b>Dateien:</b></div>
-    <table id="fileTable" class="fileTable"> 
-    <tr>
-    <th align=left>Dateiname</th>
-    <th align=left></th>
-    </tr>
-    </table>`;
-  
-    const table = document.getElementById("fileTable");
-    for(let file of files) {
-      const trFile = document.createElement("tr");
-      table.append(trFile);
-  
-      const tdLink = document.createElement("td");
-      trFile.append(tdLink);
-      const downloadLink = document.createElement("a");
-      downloadLink.innerText = `${file.filename} (${file.filesize})`;
-      downloadLink.setAttribute("href", "#");
-      downloadLink.onclick = async e => { 
-        const data = await downloadFileFromWFS(geoserver_address, file_wfs_name, 'gast', 'gast', file.filename); 
-        // if(file.filename.endsWith(".jpg") || file.filename.endsWith(".jpeg")) {
+      content.innerHTML = `
+      <div style="margin-top: 10px"><b>Dateien:</b></div>
+      <table id="fileTable" class="fileTable"> 
+      <tr>
+      <th align=left>Dateiname</th>
+      <th align=left></th>
+      </tr>
+      </table>`;
+    
+      const table = document.getElementById("fileTable");
+      for(let file of files) {
+        const trFile = document.createElement("tr");
+        table.append(trFile);
+    
+        const tdLink = document.createElement("td");
+        trFile.append(tdLink);
+        const downloadLink = document.createElement("a");
+        downloadLink.innerText = `${file.filename} (${file.filesize})`;
+        downloadLink.setAttribute("href", "#");
+        downloadLink.onclick = async e => { 
+          const data = await downloadFileFromWFS(geoserver_address, file_wfs_name, 'gast', 'gast', file.filename); 
+          // if(file.filename.endsWith(".jpg") || file.filename.endsWith(".jpeg")) {
 
 
-        // } else {
+          // } else {
 
-        // }
-        FileSaver.saveAs(data, file.filename, 'application/octet_stream');
-        e.preventDefault(); 
+          // }
+          FileSaver.saveAs(data, file.filename, 'application/octet_stream');
+          e.preventDefault(); 
+        }
+        tdLink.appendChild(downloadLink);
+    
+        const tdDelete = document.createElement("td");
+        trFile.append(tdDelete);
       }
-      tdLink.appendChild(downloadLink);
-  
-      const tdDelete = document.createElement("td");
-      trFile.append(tdDelete);
     }
   }
 
